@@ -5,6 +5,7 @@ space = Drop(Star(Space()))
 
 PNonZeroInt64() = Parse(p"-?[1-9][0-9]*", Int64)
 PPosInt64() = Parse(p"[1-9][0-9]*", Int64)
+PPosZeroInt64() = Parse(p"[0-9][0-9]*", Int64)
 
 @with_pre space begin
     sum = Delayed()
@@ -12,18 +13,23 @@ PPosInt64() = Parse(p"[1-9][0-9]*", Int64)
     weekday_short = Alt(map(x -> Pattern(uppercase(x)), Dates.ENGLISH.days_of_week_abbr)...)
     month_short = Alt(map(x -> Pattern(uppercase(x)), Dates.ENGLISH.months_abbr)...)
 
-    rdate_term = Alt()
-    rdate_expr = rdate_term | (E"(" + space + sum + space + E")")
+    brackets = E"(" + space + sum + space + E")"
+    next = (E"Next(" + space + sum + (space + E"," + sum)[0:end] + space + E")" |> xs -> Next(xs, false))
+    next_inclusive = (E"Next!(" + space + sum + (space + E"," + sum)[0:end] + space + E")" |> xs -> Next(xs, true))
+    last = (E"Last(" + space + sum + (space + E"," + sum)[0:end] + space + E")" |> xs -> Last(xs, false))
+    last_inclusive = (E"Last!(" + space + sum + (space + E"," + sum)[0:end] + space + E")" |> xs -> Last(xs, true))
 
-    # Add support for multiple negatives --2d for example...
+    rdate_term = Alt()
+    rdate_expr = rdate_term | brackets | next | next_inclusive | last | last_inclusive
+
     neg = Delayed()
     neg.matcher = rdate_expr | (E"-" + neg > -)
-
-    mul = E"*" + (neg | PPosInt64())
-    prod = (neg | ((PPosInt64() | neg) + mul[0:end])) |> Base.prod
+    cal_adj = neg + (E"@" + p"[a-zA-Z\\\\\\s\\|]+" + E"[" + Alt(map(Pattern, collect(keys(HOLIDAY_ROUNDING_MAPPINGS)))...) + E"]")[0:1] |> xs -> length(xs) == 1 ? xs[1] : CalendarAdj(map(String, split(xs[2], "|")), xs[1], HOLIDAY_ROUNDING_MAPPINGS[xs[3]])
+    mul = E"*" + (cal_adj | PPosInt64())
+    prod = (cal_adj | ((PPosInt64() | cal_adj) + mul[0:end])) |> Base.prod
     add = E"+" + prod
     sub = E"-" + prod > -
-    sum.matcher = prod + (add | sub)[0:end] |> Base.sum
+    sum.matcher = (sub | prod) + (add | sub)[0:end] |> Base.sum
 
     entry = sum + Eos()
 end

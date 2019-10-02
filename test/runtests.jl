@@ -5,28 +5,59 @@ using ParserCombinator
 
 struct DummyCalendarManager <: RDates.CalendarManager end
 
-function with_cal_mgr(f::Function, cal_mgr::RDates.CalendarManager)
-    global calendar_mgr
-    current_cal_mgr = calendar_mgr
-    calendar_mgr = cal_mgr
-    try
-        f()
-    finally
-        calendar_mgr = current_cal_mgr
-    end
-end
-
-calendar_mgr = nothing
-Base.:+(x::RDates.RDate, y::Date) = RDates.apply(x, y, calendar_mgr)
-Base.:+(x::Date, y::RDates.RDate) = RDates.apply(y, x, calendar_mgr)
-
 @testset "rdate calendar adjustments" begin
     cal_mgr = RDates.SimpleCalendarManager(Dict("WEEKEND" => RDates.WeekendCalendar()))
     with_cal_mgr(cal_mgr) do
-        @test RDates.CalendarAdj("WEEKEND", rd"1d", RDates.HolidayRoundingNBD()) + Date(2019,4,16) == Date(2019,4,17)
-        @test RDates.CalendarAdj("WEEKEND", rd"1d", RDates.HolidayRoundingNBD()) + Date(2019,9,27) == Date(2019,9,30)
-        @test RDates.CalendarAdj("WEEKEND", rd"1d", RDates.HolidayRoundingNBD()) + Date(2019,11,29) == Date(2019,12,2)
-        @test RDates.CalendarAdj("WEEKEND", rd"1d", RDates.HolidayRoundingNBDSM()) + Date(2019,11,29) == Date(2019,11,29)
+        @test RDates.CalendarAdj(["WEEKEND"], rd"1d", RDates.HolidayRoundingNBD()) + Date(2019,4,16) == Date(2019,4,17)
+        @test RDates.CalendarAdj(["WEEKEND"], rd"1d", RDates.HolidayRoundingNBD()) + Date(2019,9,27) == Date(2019,9,30)
+        @test RDates.CalendarAdj(["WEEKEND"], rd"1d", RDates.HolidayRoundingNBD()) + Date(2019,11,29) == Date(2019,12,2)
+        @test RDates.CalendarAdj(["WEEKEND"], rd"1d", RDates.HolidayRoundingNBDSM()) + Date(2019,11,29) == Date(2019,11,29)
+
+        @test rd"1d@WEEKEND[NBD]" == RDates.CalendarAdj(["WEEKEND"], rd"1d", RDates.HolidayRoundingNBD())
+        @test rd"(2w + 3E)@WEEKEND[NBDSM]" == RDates.CalendarAdj(["WEEKEND"], rd"2w + 3E", RDates.HolidayRoundingNBDSM())
+    end
+end
+
+@testset "rdate business days" begin
+    cal_mgr = RDates.SimpleCalendarManager(Dict("WEEKEND" => RDates.WeekendCalendar()))
+    with_cal_mgr(cal_mgr) do
+        @test rd"0b@WEEKEND" + Date(2019,9,28) == Date(2019,9,30)
+        @test rd"-0b@WEEKEND" + Date(2019,9,28) == Date(2019,9,27)
+        @test rd"1b@WEEKEND" + Date(2019,9,28) == Date(2019,9,30)
+        @test rd"2b@WEEKEND" + Date(2019,9,28) == Date(2019,10,1)
+    end
+end
+
+@testset "rdate next operator" begin
+    cal_mgr = RDates.SimpleCalendarManager(Dict("WEEKEND" => RDates.WeekendCalendar()))
+    with_cal_mgr(cal_mgr) do
+        @test rd"Next(0E,1E)" + Date(2019,1,1) == Date(2019,4,21)
+        @test rd"Next(0E,1E)" + Date(2019,4,21) == Date(2020,4,12)
+        @test rd"Next(0E,1E)" + Date(2019,5,1) == Date(2020,4,12)
+
+        # Next! makes it inclusive of today
+        @test rd"Next!(0E,1E)" + Date(2019,1,1) == Date(2019,4,21)
+        @test rd"Next!(0E,1E)" + Date(2019,4,21) == Date(2019,4,21)
+        @test rd"Next!(0E,1E)" + Date(2019,5,1) == Date(2020,4,12)
+
+        # Demonstration of how to get the next IMM date
+        @test rd"Next(1MAR+3rd WED,1JUN+3rd WED,1SEP+3rd WED,1DEC+3rd WED,1y+1MAR+3rd WED)" + Date(2019,9,25) == Date(2019,12,18)
+        @test rd"Next(1MAR+3rd WED,1JUN+3rd WED,1SEP+3rd WED,1DEC+3rd WED,1y+1MAR+3rd WED)" + Date(2019,9,1) == Date(2019,9,18)
+        @test rd"Next(1MAR+3rd WED,1JUN+3rd WED,1SEP+3rd WED,1DEC+3rd WED,1y+1MAR+3rd WED)" + Date(2019,12,31) == Date(2020,3,18)
+    end
+end
+
+@testset "rdate prev operator" begin
+    cal_mgr = RDates.SimpleCalendarManager(Dict("WEEKEND" => RDates.WeekendCalendar()))
+    with_cal_mgr(cal_mgr) do
+        @test rd"Last(0E,-1E)" + Date(2020,1,1) == Date(2019,4,21)
+        @test rd"Last(0E,-1E)" + Date(2020,4,12) == Date(2019,4,21)
+        @test rd"Last(0E,-1E)" + Date(2020,5,1) == Date(2020,4,12)
+
+        # Prev! makes it inclusive of today
+        @test rd"Last!(0E,-1E)" + Date(2020,1,1) == Date(2019,4,21)
+        @test rd"Last!(0E,-1E)" + Date(2020,4,12) == Date(2020,4,12)
+        @test rd"Last!(0E,-1E)" + Date(2020,5,1) == Date(2020,4,12)
     end
 end
 
